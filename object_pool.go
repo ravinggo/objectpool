@@ -15,6 +15,7 @@ const (
 	otherMinCap = 16
 	byteMinCap  = 128
 	KindMask    = (1 << 5) - 1
+	offset      = 5
 )
 
 func GetTypePool[T any]() *sync.Pool {
@@ -71,6 +72,12 @@ func GetPtr[T any]() uintptr {
 	return (uintptr)(unsafe.Pointer(t))
 }
 
+func GetPtrAndIndex[T any]() (uintptr, int) {
+	p := GetPtr[T]()
+	index := int(p>>offset) & maxIndex
+	return p, index
+}
+
 // GetPtrAny get type pointer of param a
 func GetPtrAny(a any) uintptr {
 	t := *(**Type)(unsafe.Pointer(&a))
@@ -78,6 +85,12 @@ func GetPtrAny(a any) uintptr {
 		t = (*PtrType)(unsafe.Pointer(t)).Elem
 	}
 	return (uintptr)(unsafe.Pointer(t))
+}
+
+func GetPtrAnyAndIndex(a any) (uintptr, int) {
+	p := GetPtrAny(a)
+	index := int(p>>offset) & maxIndex
+	return p, index
 }
 
 // GetMapPtr get type pointer of map[K]V
@@ -107,7 +120,7 @@ type objectPool struct {
 }
 
 func get[T any](p uintptr) *sync.Pool {
-	index := (p >> 6) & maxIndex
+	index := (p >> offset) & maxIndex
 	var ss []poolUintptr
 	var x *poolUintptr
 	v := op.m[index].Load()
@@ -154,7 +167,7 @@ func get[T any](p uintptr) *sync.Pool {
 }
 
 func getMap[K comparable, V any](p uintptr) *sync.Pool {
-	index := (p >> 6) & maxIndex
+	index := (p >> offset) & maxIndex
 	var ss []poolUintptr
 	v := op.m[index].Load()
 	if v != nil {
@@ -198,7 +211,7 @@ func getMap[K comparable, V any](p uintptr) *sync.Pool {
 }
 
 func getSlice(p uintptr) *slicePool {
-	index := (p >> 6) & maxIndex
+	index := (p >> offset) & maxIndex
 	var ss []poolUintptr
 	v := op.m[index].Load()
 	if v != nil {
