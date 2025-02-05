@@ -26,6 +26,10 @@ func GetSliceTypePool[T any]() *SlicePool {
 	return getSlice(GetPtr[Slice[T]]())
 }
 
+func GetPtrSliceTypePool[T any]() *SlicePool {
+	return getSlice(GetPtr[[]T]())
+}
+
 func GetMapTypePool[K comparable, V any]() *sync.Pool {
 	return getMap[K, V](GetMapPtr[K, V]())
 }
