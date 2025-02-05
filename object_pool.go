@@ -302,9 +302,38 @@ func getSlicePool[T any](s *SlicePool, cap int, minCap int) *Slice[T] {
 	return &Slice[T]{Data: make([]T, 0, 1<<idx)}
 }
 
+func getPtrSlicePool[T any](s *SlicePool, cap int, minCap int) *[]T {
+	if cap > math.MaxInt32 {
+		ret := make([]T, cap)
+		return &ret
+	}
+
+	if cap < minCap { // 小内存分配太零散了。128字节起步，复用率比较高
+		cap = minCap
+	}
+
+	idx := index(uint32(cap))
+	if v := s.pools[idx].Get(); v != nil {
+		bp := v.(*[]T)
+		return bp
+	}
+	ret := make([]T, 0, 1<<idx)
+	return &ret
+}
+
 func putSlicePool[T any](s *SlicePool, t *Slice[T]) {
 	t.Data = t.Data[:0]
 	c := cap(t.Data)
+	idx := index(uint32(c))
+	if c != 1<<idx { // 不是Get获取的[]byte，放在前一个索引的Pool里面
+		idx--
+	}
+	s.pools[idx].Put(t)
+}
+
+func putPtrSlicePool[T any](s *SlicePool, t *[]T) {
+	*t = (*t)[:0]
+	c := cap(*t)
 	idx := index(uint32(c))
 	if c != 1<<idx { // 不是Get获取的[]byte，放在前一个索引的Pool里面
 		idx--
@@ -325,6 +354,18 @@ func GetSlice[T any](cap int) *Slice[T] {
 	return getSlicePool[T](s, cap, minCap)
 }
 
+func GetPtrSlice[T any](cap int) *[]T {
+	typPtr := GetPtr[[]T]()
+	s := getSlice(typPtr)
+	var minCap int
+	if typPtr != bytesPtr {
+		minCap = otherMinCap
+	} else {
+		minCap = byteMinCap
+	}
+	return getPtrSlicePool[T](s, cap, minCap)
+}
+
 func GetSlice2[T any](s *SlicePool, cap int) *Slice[T] {
 	typPtr := GetPtr[Slice[T]]()
 	var minCap int
@@ -333,7 +374,19 @@ func GetSlice2[T any](s *SlicePool, cap int) *Slice[T] {
 	} else {
 		minCap = byteMinCap
 	}
+
 	return getSlicePool[T](s, cap, minCap)
+}
+
+func GetPtrSlice2[T any](s *SlicePool, cap int) *[]T {
+	typPtr := GetPtr[[]T]()
+	var minCap int
+	if typPtr != bytesPtr {
+		minCap = otherMinCap
+	} else {
+		minCap = byteMinCap
+	}
+	return getPtrSlicePool[T](s, cap, minCap)
 }
 
 // GetSliceForSize  get a slice from object pool with T and size, len() == size
@@ -343,9 +396,21 @@ func GetSliceForSize[T any](size int) *Slice[T] {
 	return s
 }
 
+func GetPtrSliceForSize[T any](size int) *[]T {
+	s := GetPtrSlice[T](size)
+	*s = (*s)[:size]
+	return s
+}
+
 func GetSliceForSize2[T any](sp *SlicePool, size int) *Slice[T] {
 	s := GetSlice2[T](sp, size)
 	s.Data = s.Data[:size]
+	return s
+}
+
+func GetPtrSliceForSize2[T any](sp *SlicePool, size int) *[]T {
+	s := GetPtrSlice2[T](sp, size)
+	*s = (*s)[:size]
 	return s
 }
 
