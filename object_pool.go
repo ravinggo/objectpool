@@ -22,6 +22,14 @@ func GetTypePool[T any]() *sync.Pool {
 	return get[T](GetPtr[T]())
 }
 
+func GetSliceTypePool[T any]() *SlicePool {
+	return getSlice(GetPtr[Slice[T]]())
+}
+
+func GetMapTypePool[K comparable, V any]() *sync.Pool {
+	return getMap[K, V](GetMapPtr[K, V]())
+}
+
 // Clear is an interface that can be implemented by a struct to reset its value
 // Just for the convenience of objectpool
 type Clear interface {
@@ -110,7 +118,7 @@ var (
 
 type poolUintptr struct {
 	uintptr
-	slicePool  slicePool
+	slicePool  SlicePool
 	singlePool sync.Pool
 }
 
@@ -210,7 +218,7 @@ func getMap[K comparable, V any](p uintptr) *sync.Pool {
 	return &po.singlePool
 }
 
-func getSlice(p uintptr) *slicePool {
+func getSlice(p uintptr) *SlicePool {
 	index := (p >> offset) & maxIndex
 	var ss []poolUintptr
 	v := op.m[index].Load()
@@ -269,7 +277,7 @@ type Slice[T any] struct {
 	Data []T
 }
 
-type slicePool struct {
+type SlicePool struct {
 	pools [32]sync.Pool
 }
 
@@ -277,7 +285,7 @@ func index(n uint32) uint32 {
 	return uint32(bits.Len32(n - 1))
 }
 
-func getSlicePool[T any](s *slicePool, cap int, minCap int) *Slice[T] {
+func getSlicePool[T any](s *SlicePool, cap int, minCap int) *Slice[T] {
 	if cap > math.MaxInt32 {
 		return &Slice[T]{Data: make([]T, cap)}
 	}
@@ -294,7 +302,7 @@ func getSlicePool[T any](s *slicePool, cap int, minCap int) *Slice[T] {
 	return &Slice[T]{Data: make([]T, 0, 1<<idx)}
 }
 
-func putSlicePool[T any](s *slicePool, t *Slice[T]) {
+func putSlicePool[T any](s *SlicePool, t *Slice[T]) {
 	t.Data = t.Data[:0]
 	c := cap(t.Data)
 	idx := index(uint32(c))
@@ -317,9 +325,26 @@ func GetSlice[T any](cap int) *Slice[T] {
 	return getSlicePool[T](s, cap, minCap)
 }
 
+func GetSlice2[T any](s *SlicePool, cap int) *Slice[T] {
+	typPtr := GetPtr[Slice[T]]()
+	var minCap int
+	if typPtr != bytesPtr {
+		minCap = otherMinCap
+	} else {
+		minCap = byteMinCap
+	}
+	return getSlicePool[T](s, cap, minCap)
+}
+
 // GetSliceForSize  get a slice from object pool with T and size, len() == size
 func GetSliceForSize[T any](size int) *Slice[T] {
 	s := GetSlice[T](size)
+	s.Data = s.Data[:size]
+	return s
+}
+
+func GetSliceForSize2[T any](sp *SlicePool, size int) *Slice[T] {
+	s := GetSlice2[T](sp, size)
 	s.Data = s.Data[:size]
 	return s
 }
