@@ -154,13 +154,16 @@ func BenchmarkGetMapPutMap(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		PutMap(GetMap[int, Struct]())
+		x := GetMap[int, Struct]()
+		y := x
+		PutMap(y)
 	}
 }
 
 var p = sync.Pool{
 	New: func() interface{} {
-		return new(Struct)
+		ret := make([]int, 0)
+		return &ret
 	},
 }
 
@@ -168,6 +171,58 @@ func BenchmarkPool(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		p.Put(p.Get())
+		x := p.Get().(*[]int)
+		p.Put(x)
+	}
+}
+
+func BenchmarkGetKA(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	ka := NewKeepAlive(3)
+	for i := 0; i < b.N; i++ {
+		a1 = GetKA[Struct](ka)
+		a2 = GetKASlice[Struct](ka, 12).Data
+		a3 = GetKAMap[int, *Struct](ka)
+		ka.Reset()
+	}
+}
+
+var a1 *Struct
+var a2 []Struct
+var a3 map[int]*Struct
+
+func BenchmarkMallocgc(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		a1 = &Struct{}
+		a2 = make([]Struct, 12)
+		a3 = make(map[int]*Struct)
+	}
+}
+
+func TestNewKeepAlive(t *testing.T) {
+	ka := NewKeepAlive(3)
+	if cap(ka.elems) != 3 {
+		t.Fatal("NewKeepAlive(3): cap(ka.elems) != 3")
+	}
+	a1 = GetKA[Struct](ka)
+	if reflect.TypeOf(a1) != reflect.TypeOf(&Struct{}) {
+		t.Fatal("NewKeepAlive(3): GetKA[Struct](ka) is not *Struct")
+	}
+
+	a2 = GetKASlice[Struct](ka, 12).Data
+	if cap(a2) != otherMinCap {
+		t.Fatalf("GetKASlice[Struct](ka, 12).Data len is not %d", otherMinCap)
+	}
+
+	a3 = GetKAMap[int, *Struct](ka)
+	if reflect.TypeOf(a3) != reflect.TypeOf(map[int]*Struct{}) {
+		t.Fatal("GetKAMap[int, *Struct](ka) is not map[int]*Struct")
+	}
+
+	if len(ka.elems) != 3 {
+		t.Fatal("NewKeepAlive(3): len(ka.elems)!= 3")
 	}
 }

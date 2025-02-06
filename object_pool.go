@@ -23,11 +23,11 @@ func GetTypePool[T any]() *sync.Pool {
 }
 
 func GetSliceTypePool[T any]() *SlicePool {
-	return getSlice(GetPtr[Slice[T]]())
+	return getSlice[T](GetPtr[Slice[T]]())
 }
 
 func GetPtrSliceTypePool[T any]() *SlicePool {
-	return getSlice(GetPtr[[]T]())
+	return getSlice[T](GetPtr[[]T]())
 }
 
 func GetMapTypePool[K comparable, V any]() *sync.Pool {
@@ -117,13 +117,22 @@ var (
 	bytesPtr = func() uintptr {
 		return GetPtr[Slice[byte]]()
 	}()
-	bytesPool = getSlice(bytesPtr)
+	bytesPool = getSlice[byte](bytesPtr)
 )
+
+type spl struct {
+	SlicePool
+	PutPointer
+}
+type pl struct {
+	sync.Pool
+	PutPointer
+}
 
 type poolUintptr struct {
 	uintptr
-	slicePool  SlicePool
-	singlePool sync.Pool
+	slicePool  spl
+	singlePool pl
 }
 
 type objectPool struct {
@@ -132,6 +141,10 @@ type objectPool struct {
 }
 
 func get[T any](p uintptr) *sync.Pool {
+	return &getPl[T](p).Pool
+}
+
+func getPl[T any](p uintptr) *pl {
 	index := (p >> offset) & maxIndex
 	var ss []poolUintptr
 	var x *poolUintptr
@@ -166,10 +179,13 @@ func get[T any](p uintptr) *sync.Pool {
 	copy(newSS, ss)
 	newSS[l] = poolUintptr{
 		uintptr: p,
-		singlePool: sync.Pool{
-			New: func() any {
-				return new(T)
+		singlePool: pl{
+			Pool: sync.Pool{
+				New: func() any {
+					return new(T)
+				},
 			},
+			PutPointer: putKA[T],
 		},
 	}
 	op.m[index].Store(&newSS)
@@ -179,6 +195,10 @@ func get[T any](p uintptr) *sync.Pool {
 }
 
 func getMap[K comparable, V any](p uintptr) *sync.Pool {
+	return &getMapPl[K, V](p).Pool
+}
+
+func getMapPl[K comparable, V any](p uintptr) *pl {
 	index := (p >> offset) & maxIndex
 	var ss []poolUintptr
 	v := op.m[index].Load()
@@ -210,10 +230,13 @@ func getMap[K comparable, V any](p uintptr) *sync.Pool {
 	copy(newSS, ss)
 	newSS[l] = poolUintptr{
 		uintptr: p,
-		singlePool: sync.Pool{
-			New: func() any {
-				return map[K]V{}
+		singlePool: pl{
+			Pool: sync.Pool{
+				New: func() any {
+					return map[K]V{}
+				},
 			},
+			PutPointer: putKAMap[K, V],
 		},
 	}
 	op.m[index].Store(&newSS)
@@ -222,7 +245,11 @@ func getMap[K comparable, V any](p uintptr) *sync.Pool {
 	return &po.singlePool
 }
 
-func getSlice(p uintptr) *SlicePool {
+func getSlice[T any](p uintptr) *SlicePool {
+	return &getSliceSpl[T](p).SlicePool
+}
+
+func getSliceSpl[T any](p uintptr) *spl {
 	index := (p >> offset) & maxIndex
 	var ss []poolUintptr
 	v := op.m[index].Load()
@@ -254,6 +281,9 @@ func getSlice(p uintptr) *SlicePool {
 	copy(newSS, ss)
 	newSS[l] = poolUintptr{
 		uintptr: p,
+		slicePool: spl{
+			PutPointer: putKASlice[T],
+		},
 	}
 	op.m[index].Store(&newSS)
 	po := &newSS[l]
@@ -348,7 +378,7 @@ func putPtrSlicePool[T any](s *SlicePool, t *[]T) {
 // GetSlice get a slice from object pool with T,len() == 0
 func GetSlice[T any](cap int) *Slice[T] {
 	typPtr := GetPtr[Slice[T]]()
-	s := getSlice(typPtr)
+	s := getSlice[T](typPtr)
 	var minCap int
 	if typPtr != bytesPtr {
 		minCap = otherMinCap
@@ -360,7 +390,7 @@ func GetSlice[T any](cap int) *Slice[T] {
 
 func GetPtrSlice[T any](cap int) *[]T {
 	typPtr := GetPtr[[]T]()
-	s := getSlice(typPtr)
+	s := getSlice[T](typPtr)
 	var minCap int
 	if typPtr != bytesPtr {
 		minCap = otherMinCap
@@ -434,7 +464,7 @@ func PutSlice[T any](t *Slice[T]) {
 		}
 	}
 
-	s := getSlice(typPtr)
+	s := getSlice[T](typPtr)
 	putSlicePool(s, t)
 }
 
@@ -454,7 +484,7 @@ func PutSliceClear[T any](t *Slice[T]) {
 		}
 	}
 
-	s := getSlice(typPtr)
+	s := getSlice[T](typPtr)
 	putSlicePool(s, t)
 }
 
@@ -528,4 +558,132 @@ func (b *Bytes) Bytes() []byte {
 
 func (b *Bytes) Reset() {
 	b.Data = b.Data[:0]
+}
+
+type KeepAliveElem struct {
+	put  uintptr
+	pool uintptr
+	// unsafe.Pointer for keepalive
+	data unsafe.Pointer
+}
+
+type KeepAlive struct {
+	elems []KeepAliveElem
+}
+
+func NewKeepAlive(cap int) *KeepAlive {
+	return &KeepAlive{make([]KeepAliveElem, 0, cap)}
+}
+
+func (ka *KeepAlive) Reset() {
+	for _, e := range ka.elems {
+		f := *(*PutPointer)(unsafe.Pointer(e.put))
+		f(e.pool, e.data)
+	}
+
+	clear(ka.elems)
+	ka.elems = ka.elems[:0]
+}
+
+func GetKA[T any](ka *KeepAlive) *T {
+	pl := getPl[T](GetPtr[T]())
+	v := pl.Pool.Get().(*T)
+	ka.elems = append(
+		ka.elems, KeepAliveElem{
+			put:  uintptr(unsafe.Pointer(&pl.PutPointer)),
+			pool: uintptr(unsafe.Pointer(&pl.Pool)),
+			data: unsafe.Pointer(v),
+		},
+	)
+	return v
+}
+
+// GetKASlice get a slice from object pool with T and cap
+// GetKASlice == make([]T,0,cap)
+func GetKASlice[T any](ka *KeepAlive, cap int) *Slice[T] {
+	typPtr := GetPtr[Slice[T]]()
+	spl := getSliceSpl[T](typPtr)
+	var minCap int
+	if typPtr != bytesPtr {
+		minCap = otherMinCap
+	} else {
+		minCap = byteMinCap
+	}
+	v := getSlicePool[T](&spl.SlicePool, cap, minCap)
+	ka.elems = append(
+		ka.elems, KeepAliveElem{
+			put:  uintptr(unsafe.Pointer(&spl.PutPointer)),
+			pool: uintptr(unsafe.Pointer(&spl.SlicePool)),
+			data: unsafe.Pointer(v),
+		},
+	)
+	return v
+}
+
+// GetKASliceSize get a slice from object pool with T and size, len() == size
+// GetKASliceSize == make([]T,size,cap)
+func GetKASliceSize[T any](ka *KeepAlive, size, cap int) *Slice[T] {
+	if cap < size {
+		cap = size
+	}
+	ret := GetKASlice[T](ka, cap)
+	ret.Data = ret.Data[:size]
+	return ret
+}
+
+func GetKAMap[K comparable, V any](ka *KeepAlive) map[K]V {
+	pl := getMapPl[K, V](GetMapPtr[K, V]())
+	v := pl.Pool.Get().(map[K]V)
+	ka.elems = append(
+		ka.elems, KeepAliveElem{
+			put:  uintptr(unsafe.Pointer(&pl.PutPointer)),
+			pool: uintptr(unsafe.Pointer(&pl.Pool)),
+
+			// why? map is *runtime.hmap,data is *hmap
+			// (unsafe.Pointer(&v)) get v(stack) address
+			// *(*uintptr)(unsafe.Pointer(&v)) get *runtime.hmap to unsafe.Pointer keepalive
+			data: unsafe.Pointer(*(*uintptr)(unsafe.Pointer(&v))),
+		},
+	)
+	return v
+}
+
+type PutPointer func(uintptr, unsafe.Pointer)
+
+func putKA[T any](pool uintptr, p unsafe.Pointer) {
+	var a any = (*T)(p)
+	if c, ok := a.(Clear); ok {
+		c.Reset()
+	}
+	(*sync.Pool)(unsafe.Pointer(pool)).Put(a)
+}
+
+func putKASlice[T any](pool uintptr, p unsafe.Pointer) {
+	t := (*Slice[T])(p)
+	if cap(t.Data) > math.MaxInt32 {
+		return
+	}
+	typPtr := GetPtr[Slice[T]]()
+	if typPtr != bytesPtr {
+		if cap(t.Data) < otherMinCap {
+			return
+		}
+		clear(t.Data)
+	} else {
+		if cap(t.Data) < byteMinCap {
+			return
+		}
+	}
+	putSlicePool((*SlicePool)(unsafe.Pointer(pool)), t)
+}
+
+func putKAMap[K comparable, V any](pool uintptr, p unsafe.Pointer) {
+	// p is *runtime.hmap
+	x := (uintptr)(p)
+	// get x(stack) address: **runtime.hmap
+	y := unsafe.Pointer(&x)
+	// get *(**runtime.hmap)(y) to unsafe.Pointer
+	m := *(*map[K]V)(y)
+	clear(m)
+	(*sync.Pool)(unsafe.Pointer(pool)).Put(m)
 }
