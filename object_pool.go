@@ -655,11 +655,10 @@ func GetKAMap[K comparable, V any](ka *KeepAlive) map[K]V {
 type PutPointer func(uintptr, unsafe.Pointer)
 
 func putKA[T any](pool uintptr, p unsafe.Pointer) {
-	var a any = (*T)(p)
-	if c, ok := a.(Clear); ok {
-		c.Reset()
-	}
-	(*sync.Pool)(unsafe.Pointer(pool)).Put(a)
+	ptr := (*T)(p)
+	var zero T
+	*ptr = zero
+	(*sync.Pool)(unsafe.Pointer(pool)).Put(ptr)
 }
 
 func putKASlice[T any](pool uintptr, p unsafe.Pointer) {
