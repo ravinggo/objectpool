@@ -105,9 +105,13 @@ func GetPtrAnyAndIndex(a any) (uintptr, int) {
 	return p, index
 }
 
+type mapPtr[K comparable, V any] struct {
+	x map[K]V
+}
+
 // GetMapPtr get type pointer of map[K]V
 func GetMapPtr[K comparable, V any]() uintptr {
-	var a any = (map[K]V)(nil)
+	var a any = (*mapPtr[K, V])(nil)
 	t := *(**Type)(unsafe.Pointer(&a))
 	return (uintptr)(unsafe.Pointer(t))
 }

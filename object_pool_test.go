@@ -114,7 +114,14 @@ func TestGet(t *testing.T) {
 	addSet(ptrCheck, GetPtr[Struct](), GetPtr[*Struct](), GetPtr[*Struct1](), GetPtr[Slice[int]]())
 	addSet(ptrCheck, GetPtr[Slice[int64]](), GetPtr[int64](), GetPtr[*int64](), GetPtr[Slice[byte]]())
 	addSet(ptrCheck, GetPtr[Slice[*int64]](), GetPtr[uint64](), GetPtr[*uint64](), GetPtr[Slice[rune]]())
+	if GetMapPtr[int, int]() == GetPtr[map[int]int]() {
+		t.Fatalf("GetMapPtr[int, int]() == GetPtr[map[int]int]() ,must not equal")
+	}
 
+	mPtr := Get[map[string]string]()
+	if reflect.TypeOf(mPtr) != reflect.TypeOf((*map[string]string)(nil)) {
+		t.Fatalf("reflect.TypeOf(Get[map[string]string]()) != *map[string]string")
+	}
 	out := GetSlice[*Struct1](1)
 	to := reflect.TypeOf(out.Data)
 	if to.Kind() != reflect.Slice {
