@@ -237,7 +237,7 @@ func getMapPl[K comparable, V any](p uintptr) *pl {
 		singlePool: pl{
 			Pool: sync.Pool{
 				New: func() any {
-					return map[K]V{}
+					return make(map[K]V, otherMinCap)
 				},
 			},
 			PutPointer: putKAMap[K, V],
