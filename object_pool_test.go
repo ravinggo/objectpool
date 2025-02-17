@@ -39,32 +39,32 @@ func TestGet(t *testing.T) {
 	}
 
 	bs := GetSlice[byte](0)
-	if cap(bs.Data) != byteMinCap {
+	if cap(bs) != byteMinCap {
 		t.Fatalf("GetSlice[byte](0) cap is not %d", byteMinCap)
 	}
 	bs = GetSliceForSize[byte](129)
-	if cap(bs.Data) != 256 {
+	if cap(bs) != 256 {
 		t.Fatalf("GetSlice[byte](129) cap is not %d", 256)
 	}
-	if len(bs.Data) != 129 {
+	if len(bs) != 129 {
 		t.Fatalf("GetSlice[byte](129) len is not %d", 129)
 	}
 	PutSlice(bs)
 	bss := GetSlice[Struct1](0)
-	if cap(bss.Data) != otherMinCap {
+	if cap(bss) != otherMinCap {
 		t.Fatalf("GetSlice[Struct1](0)cap is not %d", otherMinCap)
 	}
 	PutSlice(bss)
 	bss = GetSlice[Struct1](0)
-	if cap(bss.Data) != otherMinCap {
+	if cap(bss) != otherMinCap {
 		t.Fatalf("GetSlice[Struct1](0)cap is not %d", otherMinCap)
 	}
 	PutSlice(bss)
 	bss1 := GetSliceForSize[*Struct1](17)
-	if cap(bss1.Data) != 32 {
+	if cap(bss1) != 32 {
 		t.Fatalf("GetSlice[Struct1](0)cap is not %d", 32)
 	}
-	if len(bss1.Data) != 17 {
+	if len(bss1) != 17 {
 		t.Fatalf("GetSlice[Struct1](17) len is not %d", 17)
 	}
 	PutSlice(bss1)
@@ -94,11 +94,11 @@ func TestGet(t *testing.T) {
 	}
 
 	b := GetBytes(127)
-	if len(b.Data) != 0 {
+	if len(b) != 0 {
 		t.Fatalf("GetBytes(127) len is not %d", 0)
 	}
 
-	if cap(b.Data) != 128 {
+	if cap(b) != 128 {
 		t.Fatalf("GetBytes(127) len is not %d", 128)
 	}
 	b.WriteBytes('1', '2', '3')
@@ -111,9 +111,10 @@ func TestGet(t *testing.T) {
 	addSet(ptrCheck, GetMapPtr[string, string](), GetMapPtr[int, string](), GetMapPtr[int, Struct1]())
 	addSet(ptrCheck, GetMapPtr[Struct1, string](), GetMapPtr[string, Struct1](), GetMapPtr[Struct1, Struct1]())
 	addSet(ptrCheck, GetPtr[int](), GetPtr[string](), GetPtr[Struct1](), GetMapPtr[Struct1, *Struct1]())
-	addSet(ptrCheck, GetPtr[Struct](), GetPtr[*Struct](), GetPtr[*Struct1](), GetPtr[Slice[int]]())
-	addSet(ptrCheck, GetPtr[Slice[int64]](), GetPtr[int64](), GetPtr[*int64](), GetPtr[Slice[byte]]())
-	addSet(ptrCheck, GetPtr[Slice[*int64]](), GetPtr[uint64](), GetPtr[*uint64](), GetPtr[Slice[rune]]())
+	addSet(ptrCheck, GetPtr[Struct](), GetPtr[*Struct](), GetPtr[*Struct1](), GetPtr[sliceType[int]]())
+	addSet(ptrCheck, GetPtr[sliceType[int64]](), GetPtr[int64](), GetPtr[*int64](), GetPtr[sliceType[byte]]())
+	addSet(ptrCheck, GetPtr[sliceType[*int64]](), GetPtr[uint64](), GetPtr[*uint64](), GetPtr[sliceType[rune]]())
+	addSet(ptrCheck, GetPtr[[]int64]())
 	if GetMapPtr[int, int]() == GetPtr[map[int]int]() {
 		t.Fatalf("GetMapPtr[int, int]() == GetPtr[map[int]int]() ,must not equal")
 	}
@@ -123,7 +124,7 @@ func TestGet(t *testing.T) {
 		t.Fatalf("reflect.TypeOf(Get[map[string]string]()) != *map[string]string")
 	}
 	out := GetSlice[*Struct1](1)
-	to := reflect.TypeOf(out.Data)
+	to := reflect.TypeOf(out)
 	if to.Kind() != reflect.Slice {
 		t.Errorf("GetSlice[*Struct1](1) is not slice")
 	}
@@ -145,7 +146,9 @@ func BenchmarkGetPut(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		Put(Get[Struct]())
+		x := Get[Struct]()
+		y := x
+		Put(y)
 	}
 }
 
@@ -153,7 +156,9 @@ func BenchmarkGetSlicePutSlice(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		PutSlice(GetSlice[Struct](0))
+		x := GetSlice[byte](127)
+		y := x
+		PutSlice(y)
 	}
 }
 
@@ -167,36 +172,8 @@ func BenchmarkGetMapPutMap(b *testing.B) {
 	}
 }
 
-var p = sync.Pool{
-	New: func() interface{} {
-		ret := make([]int, 0)
-		return &ret
-	},
-}
-
-func BenchmarkPool(b *testing.B) {
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		x := p.Get().(*[]int)
-		p.Put(x)
-	}
-}
-
-func BenchmarkGetKA(b *testing.B) {
-	b.ReportAllocs()
-	b.ResetTimer()
-	ka := NewKeepAlive(3)
-	for i := 0; i < b.N; i++ {
-		a1 = GetKA[Struct](ka)
-		a2 = GetKASlice[Struct](ka, 12).Data
-		a3 = GetKAMap[int, *Struct](ka)
-		ka.Reset()
-	}
-}
-
 var a1 *Struct
-var a2 []Struct
+var a2 []byte
 var a3 map[int]*Struct
 
 func BenchmarkMallocgc(b *testing.B) {
@@ -204,32 +181,71 @@ func BenchmarkMallocgc(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		a1 = &Struct{}
-		a2 = make([]Struct, 12)
-		a3 = make(map[int]*Struct)
 	}
 }
 
-func TestNewKeepAlive(t *testing.T) {
-	ka := NewKeepAlive(3)
-	if cap(ka.elems) != 3 {
-		t.Fatal("NewKeepAlive(3): cap(ka.elems) != 3")
+func BenchmarkMallocgcSlice(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		a2 = make([]byte, 128)
 	}
-	a1 = GetKA[Struct](ka)
-	if reflect.TypeOf(a1) != reflect.TypeOf(&Struct{}) {
-		t.Fatal("NewKeepAlive(3): GetKA[Struct](ka) is not *Struct")
-	}
+}
 
-	a2 = GetKASlice[Struct](ka, 12).Data
-	if cap(a2) != otherMinCap {
-		t.Fatalf("GetKASlice[Struct](ka, 12).Data len is not %d", otherMinCap)
+func BenchmarkMallocgcMap(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		a3 = make(map[int]*Struct, 16)
 	}
+}
 
-	a3 = GetKAMap[int, *Struct](ka)
-	if reflect.TypeOf(a3) != reflect.TypeOf(map[int]*Struct{}) {
-		t.Fatal("GetKAMap[int, *Struct](ka) is not map[int]*Struct")
+var p1 = sync.Pool{
+	New: func() interface{} {
+		return &Struct{}
+	},
+}
+
+func BenchmarkSyncPool(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		x := p1.Get()
+		y := x
+		p1.Put(y)
 	}
+}
 
-	if len(ka.elems) != 3 {
-		t.Fatal("NewKeepAlive(3): len(ka.elems)!= 3")
+var p2 = sync.Pool{
+	New: func() interface{} {
+		ret := make([]int, 16)
+		return &ret
+	},
+}
+
+func BenchmarkSyncPoolSlice(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		x := p2.Get()
+		y := x
+		p2.Put(y)
+	}
+}
+
+var p3 = sync.Pool{
+	New: func() interface{} {
+		ret := make(map[int]Struct, 16)
+		return ret
+	},
+}
+
+func BenchmarkSyncPoolMap(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		x := p3.Get().(map[int]Struct)
+		y := x
+		p3.Put(y)
 	}
 }
