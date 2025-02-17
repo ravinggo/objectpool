@@ -84,7 +84,9 @@ func getSlicePool[T any](s *SlicePool, cap int, minCap int) []T {
 	idx := index(uint32(cap))
 	if v := s.pools[idx].Get(); v != nil {
 		bp := v.(unsafe.Pointer)
-		c := *(*int32)(bp)
+		x := (*int32)(bp)
+		c := *x
+		*x = 0
 		s := &Slice{
 			Data: bp,
 			Len:  0,
