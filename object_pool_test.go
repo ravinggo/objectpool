@@ -188,7 +188,7 @@ func BenchmarkMallocgcSlice(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		a2 = make([]byte, 128)
+		a2 = make([]byte, 127)
 	}
 }
 
@@ -218,8 +218,8 @@ func BenchmarkSyncPool(b *testing.B) {
 
 var p2 = sync.Pool{
 	New: func() interface{} {
-		ret := make([]int, 16)
-		return &ret
+		ret := make([]byte, 127)
+		return ret
 	},
 }
 
@@ -227,7 +227,7 @@ func BenchmarkSyncPoolSlice(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		x := p2.Get()
+		x := p2.Get().([]byte)
 		y := x
 		p2.Put(y)
 	}
