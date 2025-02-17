@@ -26,8 +26,8 @@ defer objectpool.PutMap(m)
 
 // Get Sync.Pool of Type
 objectpool.GetTypePool[T]() == &sync.Pool{ New: func() any { return new(T) }}
-objectpool.GetSliceTypePool[T]() == &sync.Pool{ New: func() any { return make([]T, 0, cap) }}
-objectpool.GetTypePool[K,T]() == &sync.Pool{ New: func() any { return map[K]V }}
+objectpool.GetSliceTypePool[T]() == &sync.Pool{ New: func() any { return make([]T, 0, 16) }}
+objectpool.GetTypePool[K,V]() == &sync.Pool{ New: func() any { return make(map[K]V,16) }}
 ```
 
 ## benchmark
