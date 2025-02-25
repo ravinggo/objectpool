@@ -76,8 +76,8 @@ func getSlicePool[T any](s *SlicePool, cap int, minCap int) []T {
 	if cap > math.MaxInt32 {
 		return make([]T, 0, cap)
 	}
-
-	if cap < minCap { // byte 小内存分配太零散了。128字节起步，复用率比较高,其他类型 len=16起步
+	// byte Small memory allocation is too scattered. Starting from 128 bytes, the reuse rate is relatively high, other types start with len=16
+	if cap < minCap {
 		cap = minCap
 	}
 
@@ -104,7 +104,8 @@ func putSlicePool[T any](s *SlicePool, t []T) {
 		return
 	}
 	idx := index(uint32(c))
-	if c != 1<<idx { // 不是Get获取的[]byte，放在前一个索引的Pool里面
+	// []T not obtained by Get is placed in the Pool of the previous index
+	if c != 1<<idx {
 		idx--
 	}
 	slice := (*Slice)(unsafe.Pointer(&t))
