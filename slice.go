@@ -172,6 +172,24 @@ func PutSlice[T any](t []T) {
 	putSlicePool(s, t)
 }
 
+func PutSlice2[T any](s *SlicePool, t []T) {
+	if cap(t) > math.MaxInt32 {
+		return
+	}
+	typPtr := GetPtr[sliceType[T]]()
+	if typPtr != bytesPtr {
+		if cap(t) < otherMinCap {
+			return
+		}
+	} else {
+		if cap(t) < byteMinCap {
+			return
+		}
+	}
+
+	putSlicePool(s, t)
+}
+
 func PutSliceClear[T any](t []T) {
 	if cap(t) > math.MaxInt32 {
 		return
@@ -189,6 +207,25 @@ func PutSliceClear[T any](t []T) {
 	}
 
 	s := getSlice[T](typPtr)
+	putSlicePool(s, t)
+}
+
+func PutSliceClear2[T any](s *SlicePool, t []T) {
+	if cap(t) > math.MaxInt32 {
+		return
+	}
+	typPtr := GetPtr[sliceType[T]]()
+	if typPtr != bytesPtr {
+		if cap(t) < otherMinCap {
+			return
+		}
+		clear(t)
+	} else {
+		if cap(t) < byteMinCap {
+			return
+		}
+	}
+
 	putSlicePool(s, t)
 }
 
